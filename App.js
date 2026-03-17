@@ -1,5 +1,83 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
+// ─── API FUNCTIONS ───────────────────────────────────────────────────────────
+
+const API_URL = "http://localhost:5000/api";
+
+// Convert date string like "18 Mar" to "2026-03-18"
+function formatDateForDB(dateStr) {
+  if (!dateStr) return null;
+  const now = new Date();
+  const [day, month] = dateStr.split(" ");
+  const months = { "Jan": 0, "Feb": 1, "Mar": 2, "Apr": 3, "May": 4, "Jun": 5, 
+                   "Jul": 6, "Aug": 7, "Sep": 8, "Oct": 9, "Nov": 10, "Dec": 11 };
+  const date = new Date(now.getFullYear(), months[month], parseInt(day));
+  return date.toISOString().split('T')[0];
+}
+
+// Convert time like "10:00" to "10:00:00"
+function formatTimeForDB(timeStr) {
+  if (!timeStr) return null;
+  return timeStr + ":00";
+}
+
+async function saveAppointment(doctorId, doctorName, specialty, hospital, fee, date, time, userInfo) {
+  try {
+    const formattedDate = formatDateForDB(date);
+    const formattedTime = formatTimeForDB(time);
+    
+    const response = await fetch(`${API_URL}/appointments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        doctor_id: doctorId,
+        doctor_name: doctorName,
+        specialty: specialty,
+        hospital: hospital,
+        fee: fee,
+        patient_name: userInfo?.name || "User",
+        patient_email: userInfo?.email || "user@example.com",
+        patient_phone: userInfo?.phone || "1234567890",
+        appointment_date: formattedDate,
+        appointment_time: formattedTime
+      })
+    });
+    const result = await response.json();
+    console.log("Appointment saved:", result);
+    return result;
+  } catch (error) {
+    console.error("Error saving appointment:", error);
+  }
+}
+
+async function saveReservation(restaurantId, restaurantName, cuisine, date, time, partySize, userInfo) {
+  try {
+    const formattedDate = formatDateForDB(date);
+    const formattedTime = formatTimeForDB(time);
+    
+    const response = await fetch(`${API_URL}/reservations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        restaurant_id: restaurantId,
+        restaurant_name: restaurantName,
+        cuisine: cuisine,
+        customer_name: userInfo?.name || "User",
+        customer_email: userInfo?.email || "user@example.com",
+        customer_phone: userInfo?.phone || "1234567890",
+        reservation_date: formattedDate,
+        reservation_time: formattedTime,
+        party_size: partySize
+      })
+    });
+    const result = await response.json();
+    console.log("Reservation saved:", result);
+    return result;
+  } catch (error) {
+    console.error("Error saving reservation:", error);
+  }
+}
+
 // ─── DATA ───────────────────────────────────────────────────────────────────
 
 const DOCTORS = [
@@ -107,7 +185,8 @@ body{background:#05091a}
 .doc-card:hover::before{opacity:1}
 .doc-card:hover{border-color:rgba(6,182,212,0.5);transform:translateY(-2px)}
 .doc-top{display:flex;gap:14px;margin-bottom:12px}
-.doc-avatar{width:58px;height:58px;border-radius:14px;object-fit:cover;flex-shrink:0;border:2px solid #1e3058}
+.doc-avatar{width:58px;height:58px;border-radius:14px;flex-shrink:0;border:2px solid #1e3058;display:flex;align-items:center;justify-content:center;background:rgba(6,182,212,0.12);color:#06b6d4;}
+.doc-avatar svg{width:28px;height:28px;}
 .doc-info h3{font-size:15px;font-weight:700;margin-bottom:2px}
 .doc-spec{font-size:12px;color:#06b6d4;font-weight:500;margin-bottom:6px}
 .qual-tags{display:flex;flex-wrap:wrap;gap:4px}
@@ -252,8 +331,12 @@ function DocCard({ doc, onBook }) {
   return (
     <div className="doc-card" onClick={() => onBook(doc)}>
       <div className="doc-top">
-        <img className="doc-avatar" src={doc.img} alt={doc.name}
-          onError={e => { e.target.src = "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=120&h=120&fit=crop"; }} />
+        <div className="doc-avatar">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5z" fill="currentColor"/>
+            <path d="M4 22c0-4.418 3.582-8 8-8s8 3.582 8 8v0H4z" fill="currentColor" opacity="0.7"/>
+          </svg>
+        </div>
         <div>
           <h3>{doc.name}</h3>
           <div className="spec-badge">{doc.spec}</div>
@@ -325,7 +408,7 @@ function RestCard({ r, onBook }) {
 
 // ─── BOOKING MODAL ───────────────────────────────────────────────────────────
 
-function BookingModal({ doc, onClose, onConfirm }) {
+function BookingModal({ doc, onClose, onConfirm, userInfo }) {
   const [selDate, setSelDate]   = useState(null);
   const [selTime, setSelTime]   = useState(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -339,6 +422,8 @@ function BookingModal({ doc, onClose, onConfirm }) {
     const pos = doc.queue + 1;
     setSummary({ doc, date: selDate, time: selTime, pos });
     setConfirmed(true);
+    // Save appointment to database
+    saveAppointment(doc.id, doc.name, doc.spec, doc.hospital, doc.fee, selDate, selTime, userInfo);
     onConfirm({ doc, date: selDate, time: selTime, pos });
   };
 
@@ -352,8 +437,12 @@ function BookingModal({ doc, onClose, onConfirm }) {
               <button className="close-btn" onClick={onClose}>×</button>
             </div>
             <div className="modal-doc-row">
-              <img src={doc.img} alt={doc.name} style={{ width: 44, height: 44, borderRadius: 10, objectFit: "cover" }}
-                onError={e => { e.target.src = "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=120&h=120&fit=crop"; }} />
+              <div className="doc-avatar" style={{ width: 44, height: 44, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(6,182,212,0.2)", color: "#06b6d4" }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 12c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5z" fill="currentColor"/>
+                <path d="M4 22c0-4.418 3.582-8 8-8s8 3.582 8 8v0H4z" fill="currentColor" opacity="0.7"/>
+              </svg>
+            </div>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 700 }}>{doc.name}</div>
                 <div style={{ fontSize: 12, color: "#06b6d4" }}>{doc.spec}</div>
@@ -425,7 +514,7 @@ function BookingModal({ doc, onClose, onConfirm }) {
 
 // ─── RESTAURANT MODAL ────────────────────────────────────────────────────────
 
-function RestModal({ rest, onClose }) {
+function RestModal({ rest, onClose, userInfo }) {
   const [selGuests,   setSelGuests]   = useState(null);
   const [selDate,     setSelDate]     = useState(null);
   const [selTime,     setSelTime]     = useState(null);
@@ -433,7 +522,11 @@ function RestModal({ rest, onClose }) {
 
   const dates = getDates();
 
-  const handleConfirm = () => setConfirmed(true);
+  const handleConfirm = () => {
+    // Save reservation to database
+    saveReservation(rest.id, rest.name, rest.cuisine, selDate, selTime, selGuests, userInfo);
+    setConfirmed(true);
+  };
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -505,6 +598,214 @@ function RestModal({ rest, onClose }) {
             <button className="confirm-btn" onClick={onClose}>Done</button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── LOGIN TAB ───────────────────────────────────────────────────────────────
+
+function LoginTab({ userInfo, onUserUpdate }) {
+  const [name, setName] = useState(userInfo?.name || "");
+  const [email, setEmail] = useState(userInfo?.email || "");
+  const [phone, setPhone] = useState(userInfo?.phone || "");
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    if (name && email && phone) {
+      onUserUpdate({ name, email, phone });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px", position: "relative", overflow: "hidden" }}>
+      {/* Background gradient effect */}
+      <div style={{
+        position: "absolute",
+        inset: 0,
+        background: "radial-gradient(ellipse 80% 80% at 50% 0%, rgba(6,182,212,0.15), transparent)",
+        pointerEvents: "none"
+      }}></div>
+
+      <div style={{ width: "100%", maxWidth: 420, position: "relative", zIndex: 1 }}>
+        <div style={{
+          background: "rgba(13, 20, 40, 0.8)",
+          border: "1px solid #1e3058",
+          borderRadius: "20px",
+          padding: "40px 24px",
+          backdropFilter: "blur(12px)",
+          animation: "slideUp 0.5s ease"
+        }}>
+          {/* Header */}
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{
+              fontSize: 48,
+              fontWeight: 800,
+              marginBottom: 12,
+              background: "linear-gradient(135deg, #06b6d4 20%, #10b981 80%)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              letterSpacing: "-1px"
+            }}>
+              Welcome
+            </div>
+            <p style={{ color: "#94a3b8", fontSize: 14, lineHeight: 1.6, margin: 0 }}>
+              Enter your details to get started with instant appointment bookings
+            </p>
+          </div>
+
+          {/* Form */}
+          <div style={{ marginBottom: 24 }}>
+            <label style={{ display: "block", fontSize: 12, color: "#94a3b8", marginBottom: 8, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>Full Name</label>
+            <input
+              type="text"
+              placeholder="John Doe"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                background: "#111c35",
+                border: "1px solid #1e3058",
+                borderRadius: "10px",
+                color: "#e2e8f0",
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: 14,
+                outline: "none",
+                transition: "all 0.2s",
+                boxSizing: "border-box"
+              }}
+              onFocus={e => {
+                e.target.style.borderColor = "#06b6d4";
+                e.target.style.boxShadow = "0 0 16px rgba(6, 182, 212, 0.2)";
+              }}
+              onBlur={e => {
+                e.target.style.borderColor = "#1e3058";
+                e.target.style.boxShadow = "none";
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 24 }}>
+            <label style={{ display: "block", fontSize: 12, color: "#94a3b8", marginBottom: 8, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>Email</label>
+            <input
+              type="email"
+              placeholder="john@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                background: "#111c35",
+                border: "1px solid #1e3058",
+                borderRadius: "10px",
+                color: "#e2e8f0",
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: 14,
+                outline: "none",
+                transition: "all 0.2s",
+                boxSizing: "border-box"
+              }}
+              onFocus={e => {
+                e.target.style.borderColor = "#06b6d4";
+                e.target.style.boxShadow = "0 0 16px rgba(6, 182, 212, 0.2)";
+              }}
+              onBlur={e => {
+                e.target.style.borderColor = "#1e3058";
+                e.target.style.boxShadow = "none";
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 28 }}>
+            <label style={{ display: "block", fontSize: 12, color: "#94a3b8", marginBottom: 8, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>Phone Number</label>
+            <input
+              type="tel"
+              placeholder="+91 9876543210"
+              value={phone}
+              onChange={e => setPhone(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                background: "#111c35",
+                border: "1px solid #1e3058",
+                borderRadius: "10px",
+                color: "#e2e8f0",
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: 14,
+                outline: "none",
+                transition: "all 0.2s",
+                boxSizing: "border-box"
+              }}
+              onFocus={e => {
+                e.target.style.borderColor = "#06b6d4";
+                e.target.style.boxShadow = "0 0 16px rgba(6, 182, 212, 0.2)";
+              }}
+              onBlur={e => {
+                e.target.style.borderColor = "#1e3058";
+                e.target.style.boxShadow = "none";
+              }}
+            />
+          </div>
+
+          <button
+            onClick={handleSave}
+            style={{
+              width: "100%",
+              padding: "14px",
+              borderRadius: "14px",
+              border: "none",
+              background: name && email && phone ? "linear-gradient(135deg, #06b6d4, #0891b2)" : "linear-gradient(135deg, #064e5a, #045d6a)",
+              color: "#fff",
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: 15,
+              fontWeight: 700,
+              cursor: name && email && phone ? "pointer" : "not-allowed",
+              opacity: name && email && phone ? 1 : 0.6,
+              transition: "all 0.25s",
+              letterSpacing: "0.3px"
+            }}
+            disabled={!name || !email || !phone}
+            onMouseEnter={e => {
+              if (name && email && phone) {
+                e.target.style.transform = "scale(1.02)";
+                e.target.style.boxShadow = "0 8px 24px rgba(6,182,212,0.3)";
+              }
+            }}
+            onMouseLeave={e => {
+              e.target.style.transform = "none";
+              e.target.style.boxShadow = "none";
+            }}
+          >
+            Continue to App
+          </button>
+
+          {saved && (
+            <div style={{
+              marginTop: 16,
+              padding: "12px 14px",
+              background: "rgba(16,185,129,0.1)",
+              border: "1px solid rgba(16,185,129,0.3)",
+              borderRadius: "10px",
+              color: "#34d399",
+              fontSize: 13,
+              textAlign: "center",
+              fontWeight: 600,
+              animation: "slideUp 0.3s ease"
+            }}>
+              ✓ Profile updated successfully!
+            </div>
+          )}
+        </div>
+
+        {/* Info section */}
+        <div style={{ textAlign: "center", marginTop: 24, color: "#64748b", fontSize: 12 }}>
+          <p style={{ margin: 0, lineHeight: 1.6 }}>
+            Your information will be saved with every appointment and reservation you make. You can update it anytime from your profile.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -726,11 +1027,17 @@ function RestaurantsTab({ onBook }) {
 // ─── APP ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [activeTab,    setActiveTab]    = useState("home");
+  const [activeTab,    setActiveTab]    = useState("profile");
   const [bookingDoc,   setBookingDoc]   = useState(null);
   const [bookingRest,  setBookingRest]  = useState(null);
   const [lastBooking,  setLastBooking]  = useState(null);
   const [docSearch,    setDocSearch]    = useState("");
+  const [userInfo,     setUserInfo]     = useState(null);
+
+  const handleUserUpdate = (info) => {
+    setUserInfo(info);
+    setActiveTab("home");
+  };
 
   const showDoctors = useCallback((search = "") => {
     setDocSearch(search);
@@ -746,32 +1053,41 @@ export default function App() {
     <>
       <style>{CSS}</style>
       <div id="ql-root">
-        <nav className="ql-nav">
-          <div className="ql-logo">Q<span style={{ color: "#10b981", WebkitTextFillColor: "#10b981" }}>Less</span></div>
-          {[["home","Home"],["doctors","Doctors"],["restaurants","Dining"]].map(([id, label]) => (
-            <button key={id} className={`ql-navbtn${activeTab === id ? " active" : ""}`}
-              onClick={() => { setActiveTab(id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
-              {label}
-            </button>
-          ))}
-          <div className="ql-bell">&#x1F514;</div>
-        </nav>
+        {!userInfo ? (
+          <LoginTab userInfo={userInfo} onUserUpdate={handleUserUpdate} />
+        ) : (
+          <>
+            <nav className="ql-nav">
+              <div className="ql-logo">Q<span style={{ color: "#10b981", WebkitTextFillColor: "#10b981" }}>Less</span></div>
+              {[["home","Home"],["doctors","Doctors"],["restaurants","Dining"],["profile","Profile"]].map(([id, label]) => (
+                <button key={id} className={`ql-navbtn${activeTab === id ? " active" : ""}`}
+                  onClick={() => { setActiveTab(id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+                  {label}
+                </button>
+              ))}
+              <div className="ql-bell">&#x1F514;</div>
+            </nav>
 
-        {activeTab === "home" && (
-          <HomeTab lastBooking={lastBooking} onBook={setBookingDoc} onShowDoctors={showDoctors} />
-        )}
-        {activeTab === "doctors" && (
-          <DoctorsTab initialSearch={docSearch} onBook={setBookingDoc} />
-        )}
-        {activeTab === "restaurants" && (
-          <RestaurantsTab onBook={setBookingRest} />
-        )}
+            {activeTab === "home" && (
+              <HomeTab lastBooking={lastBooking} onBook={setBookingDoc} onShowDoctors={showDoctors} />
+            )}
+            {activeTab === "doctors" && (
+              <DoctorsTab initialSearch={docSearch} onBook={setBookingDoc} />
+            )}
+            {activeTab === "restaurants" && (
+              <RestaurantsTab onBook={setBookingRest} />
+            )}
+            {activeTab === "profile" && (
+              <LoginTab userInfo={userInfo} onUserUpdate={handleUserUpdate} />
+            )}
 
-        {bookingDoc && (
-          <BookingModal doc={bookingDoc} onClose={() => setBookingDoc(null)} onConfirm={handleBookConfirm} />
-        )}
-        {bookingRest && (
-          <RestModal rest={bookingRest} onClose={() => setBookingRest(null)} />
+            {bookingDoc && (
+              <BookingModal doc={bookingDoc} onClose={() => setBookingDoc(null)} onConfirm={handleBookConfirm} userInfo={userInfo} />
+            )}
+            {bookingRest && (
+              <RestModal rest={bookingRest} onClose={() => setBookingRest(null)} userInfo={userInfo} />
+            )}
+          </>
         )}
       </div>
     </>
