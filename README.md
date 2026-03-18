@@ -1,70 +1,186 @@
-# Getting Started with Create React App
+# Appointment Booking Application
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A full-stack web application for booking doctor appointments. Built with React (frontend) and Flask (backend), connected to a MySQL database.
 
-## Available Scripts
+## Overview
 
-In the project directory, you can run:
+This appointment booking system allows users to:
+- Browse available doctors and their specialties
+- View doctor details (hospital, fee, availability)
+- Book appointments with their preferred date and time
+- Store appointment details (patient info, appointment confirmation)
 
-### `npm start`
+## Tech Stack
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- **Frontend**: React 19, React Scripts
+- **Backend**: Flask, Python
+- **Database**: MySQL
+- **API Communication**: REST API with CORS support
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Project Structure
 
-### `npm test`
+```
+appointment-app/
+├── src/                    # React frontend source code
+│   ├── App.js             # Main React component
+│   ├── App.css            # Styling
+│   ├── index.js           # App entry point
+│   └── ...
+├── backend/               # Python Flask backend
+│   ├── app.py             # Flask API endpoints
+│   ├── config.py          # Database configuration
+│   ├── schema.sql         # Database schema
+│   ├── setup_db.py        # Database initialization script
+│   ├── requirements.txt   # Python dependencies
+│   └── test_api.py        # API tests
+├── public/                # Static HTML files
+└── package.json           # Node.js dependencies
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Prerequisites
 
-### `npm run build`
+- Node.js 14+ and npm
+- Python 3.7+
+- MySQL Server
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Installation
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### Frontend Setup
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+1. Install Node.js dependencies:
+```bash
+npm install
+```
 
-### `npm run eject`
+### Backend Setup
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+1. Navigate to the backend directory:
+```bash
+cd backend
+```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+2. Create a Python virtual environment (recommended):
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+3. Install Python dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+4. Set up the database:
+   - Ensure MySQL is running
+   - Update database credentials in `config.py`
+   - Run the setup script:
+   ```bash
+   python setup_db.py
+   ```
 
-## Learn More
+## Running the Application
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+### Start the Backend Server
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+```bash
+cd backend
+python app.py
+```
 
-### Code Splitting
+The Flask API will run on `http://localhost:5000`
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+### Start the Frontend Development Server
 
-### Analyzing the Bundle Size
+```bash
+npm start
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+The React app will open at `http://localhost:3000`
 
-### Making a Progressive Web App
+## Key Features
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+- **API Endpoints**:
+  - `POST /api/appointments` - Book a new appointment
+  - `GET /api/appointments` - Retrieve appointment details
 
-### Advanced Configuration
+- **User-Friendly Interface**: Simple and intuitive UI for browsing and booking appointments
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+- **Data Validation**: Date and time formatting for database compatibility
 
-### Deployment
+- **Error Handling**: Comprehensive error handling on both frontend and backend
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+## Available npm Scripts
 
-### `npm run build` fails to minify
+- `npm start` - Run development server
+- `npm build` - Build for production
+- `npm test` - Run tests
+- `npm eject` - Eject from Create React App (one-way operation)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+## Database Schema
+
+The application uses the following tables:
+- **appointments** - Stores booking information (doctor details, patient info, appointment date/time)
+
+See `backend/schema.sql` for complete schema details.
+
+## API Documentation
+
+### Book Appointment
+**POST** `/api/appointments`
+
+Request body:
+```json
+{
+  "doctor_id": 1,
+  "doctor_name": "Dr. Smith",
+  "specialty": "Cardiology",
+  "hospital": "City Hospital",
+  "fee": 100,
+  "patient_name": "John Doe",
+  "patient_email": "john@example.com",
+  "patient_phone": "1234567890",
+  "appointment_date": "2026-03-20",
+  "appointment_time": "10:00:00"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "id": 1,
+  "message": "Appointment booked successfully"
+}
+```
+
+## Testing
+
+Run the test suite:
+```bash
+npm test
+```
+
+To test the API endpoints:
+```bash
+cd backend
+python test_api.py
+```
+
+## Troubleshooting
+
+- **Database Connection Error**: Verify MySQL is running and credentials in `config.py` are correct
+- **CORS Issues**: Ensure Flask CORS is enabled (already configured in `app.py`)
+- **Port Already in Use**: Change the port in backend/app.py or frontend configuration
+
+## Future Enhancements
+
+- User authentication and login
+- Email notifications for appointments
+- Doctor availability calendar view
+- Appointment cancellation/rescheduling
+- Payment integration
+- Admin dashboard for managing doctors and appointments
+
+## License
+
+This project is private and for internal use.
