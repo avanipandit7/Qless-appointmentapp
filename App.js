@@ -153,7 +153,7 @@ body{background:#05091a}
 .hero-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(6,182,212,0.1);border:1px solid rgba(6,182,212,0.25);color:#06b6d4;font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;margin-bottom:12px;letter-spacing:0.5px;text-transform:uppercase}
 .hero-badge span{width:6px;height:6px;background:#06b6d4;border-radius:50%;animation:pulse-dot 1.5s ease-in-out infinite}
 @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.4)}}
-.hero h1{font-size:clamp(26px,5vw,44px);font-weight:800;line-height:1.1;margin-bottom:10px;letter-spacing:-1px}
+.hero h1{font-size:clamp(36px,8vw,56px);font-weight:800;line-height:1.1;margin-bottom:10px;letter-spacing:-1px}
 .hero h1 span{background:linear-gradient(135deg,#06b6d4 20%,#10b981 80%);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
 .hero p{color:#94a3b8;font-size:14px;max-width:380px;margin:0 auto 20px;line-height:1.6}
 
@@ -214,12 +214,12 @@ body{background:#05091a}
 .ibtn:hover .ibtn-bg{left:0;top:0;width:100%;height:100%;border-radius:30px;transform:scale(1.8);background:#06b6d4}
 
 /* RESTAURANT CARDS */
-.rest-card{background:#0d1428;border:1px solid #1e3058;border-radius:18px;overflow:hidden;cursor:pointer;transition:all .25s;position:relative}
+.rest-card{background:#0d1428;border:1px solid #1e3058;border-radius:18px;overflow:hidden;cursor:pointer;transition:all .25s;position:relative;display:flex;flex-direction:row;align-items:stretch}
 .rest-card::before{content:'';position:absolute;inset:-1px;border-radius:19px;background:linear-gradient(135deg,rgba(16,185,129,0.4),rgba(6,182,212,0.2),transparent,transparent);opacity:0;transition:opacity .3s;pointer-events:none;z-index:1}
 .rest-card:hover::before{opacity:1}
 .rest-card:hover{border-color:rgba(16,185,129,0.5);transform:translateY(-2px)}
-.rest-img{width:100%;height:130px;object-fit:cover;display:block;max-width:100%}
-.rest-body{padding:14px}
+.rest-img{width:120px;height:120px;object-fit:cover;display:block;flex-shrink:0;border-radius:0 14px 14px 0}
+.rest-body{padding:14px;flex:1;display:flex;flex-direction:column;justify-content:space-between}
 .rest-name{font-size:15px;font-weight:700;margin-bottom:4px}
 .rest-cuisine{font-size:12px;color:#94a3b8;margin-bottom:8px}
 .rest-row{display:flex;align-items:center;justify-content:space-between}
@@ -408,7 +408,7 @@ function RestCard({ r, onBook }) {
 
 // ─── BOOKING MODAL ───────────────────────────────────────────────────────────
 
-function BookingModal({ doc, onClose, onConfirm, userInfo }) {
+function BookingModal({ doc, onClose, onConfirm, userInfo, onAddNotification }) {
   const [selDate, setSelDate]   = useState(null);
   const [selTime, setSelTime]   = useState(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -424,6 +424,20 @@ function BookingModal({ doc, onClose, onConfirm, userInfo }) {
     setConfirmed(true);
     // Save appointment to database
     saveAppointment(doc.id, doc.name, doc.spec, doc.hospital, doc.fee, selDate, selTime, userInfo);
+    
+    // Add to notifications
+    onAddNotification({
+      type: "appointment",
+      doctorName: doc.name,
+      specialty: doc.spec,
+      hospital: doc.hospital,
+      fee: doc.fee,
+      date: selDate,
+      time: selTime,
+      queuePos: pos,
+      userInfo: userInfo
+    });
+    
     onConfirm({ doc, date: selDate, time: selTime, pos });
   };
 
@@ -512,9 +526,125 @@ function BookingModal({ doc, onClose, onConfirm, userInfo }) {
   );
 }
 
+// ─── NOTIFICATIONS MODAL ─────────────────────────────────────────────────────
+
+function NotificationsModal({ notifications, userInfo, onClose }) {
+  // Group notifications by user (name, email, phone)
+  const userNotifications = notifications.filter(n => 
+    n.userInfo.name === userInfo.name && 
+    n.userInfo.email === userInfo.email && 
+    n.userInfo.phone === userInfo.phone
+  );
+  
+  // Live queue tracking
+  const [queueData, setQueueData] = useState({});
+  
+  useEffect(() => {
+    // Initialize queue data for each appointment
+    const initialQueueData = {};
+    userNotifications.forEach((n, idx) => {
+      if (n.type === "appointment" && !initialQueueData[idx]) {
+        initialQueueData[idx] = { queueAhead: n.queuePos - 1, queueTotal: n.queuePos + 8 };
+      }
+    });
+    setQueueData(initialQueueData);
+    
+    // Simulate live queue updates
+    const interval = setInterval(() => {
+      setQueueData(prev => {
+        const updated = { ...prev };
+        userNotifications.forEach((n, idx) => {
+          if (n.type === "appointment" && updated[idx]) {
+            // Randomly reduce queue people ahead
+            if (Math.random() < 0.3 && updated[idx].queueAhead > 0) {
+              updated[idx].queueAhead -= 1;
+              updated[idx].queueTotal = Math.max(updated[idx].queueTotal - 1, 1);
+            }
+          }
+        });
+        return updated;
+      });
+    }, 4000);
+    
+    return () => clearInterval(interval);
+  }, [userNotifications]);
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div className="modal-title">Your Bookings & Reservations</div>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+        
+        {userNotifications.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "40px 20px", color: "#94a3b8" }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>No bookings yet</div>
+            <div style={{ fontSize: 12, marginTop: 8 }}>Your appointments and reservations will appear here</div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, maxHeight: "60vh", overflowY: "auto" }}>
+            {userNotifications.map((n, idx) => (
+              <div key={idx} style={{ background: "#111c35", border: "1px solid #1e3058", borderRadius: 14, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0" }}>
+                      {n.type === "appointment" ? n.doctorName : n.restaurantName}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#06b6d4", marginTop: 2 }}>
+                      {n.type === "appointment" ? n.specialty : n.cuisine}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 20, background: "rgba(6,182,212,0.12)", padding: "4px 8px", borderRadius: 6 }}>
+                    {n.type === "appointment" ? "🏥" : "🍽️"}
+                  </div>
+                </div>
+                
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                  {n.type === "appointment" ? (
+                    <>
+                      <div><span style={{ color: "#64748b" }}>Hospital:</span> {n.hospital}</div>
+                      <div><span style={{ color: "#64748b" }}>Date:</span> {n.date}</div>
+                      <div><span style={{ color: "#64748b" }}>Time:</span> {n.time}</div>
+                      <div><span style={{ color: "#64748b" }}>Fee:</span> {n.fee}</div>
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #1e3058" }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0", marginBottom: 8 }}>Live Queue Status</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                          <div style={{ background: "rgba(6,182,212,0.08)", padding: 8, borderRadius: 8, border: "1px solid rgba(6,182,212,0.2)" }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: "#06b6d4" }}>{queueData[userNotifications.indexOf(n)]?.queueAhead ?? n.queuePos - 1}</div>
+                            <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>Before You</div>
+                          </div>
+                          <div style={{ background: "rgba(245,158,11,0.08)", padding: 8, borderRadius: 8, border: "1px solid rgba(245,158,11,0.2)" }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: "#f59e0b" }}>~{((queueData[userNotifications.indexOf(n)]?.queueAhead ?? n.queuePos - 1) * 15)}m</div>
+                            <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>Est. Wait</div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div><span style={{ color: "#64748b" }}>Cuisine:</span> {n.cuisine}</div>
+                      <div><span style={{ color: "#64748b" }}>Price Range:</span> {n.priceRange}</div>
+                      <div><span style={{ color: "#64748b" }}>Date:</span> {n.date}</div>
+                      <div><span style={{ color: "#64748b" }}>Time:</span> {n.time}</div>
+                      <div><span style={{ color: "#64748b" }}>Guests:</span> {n.guests}</div>
+                      <div><span style={{ color: "#64748b" }}>Est. Wait:</span> ~{n.estWait}m</div>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── RESTAURANT MODAL ────────────────────────────────────────────────────────
 
-function RestModal({ rest, onClose, userInfo }) {
+function RestModal({ rest, onClose, userInfo, onAddNotification }) {
   const [selGuests,   setSelGuests]   = useState(null);
   const [selDate,     setSelDate]     = useState(null);
   const [selTime,     setSelTime]     = useState(null);
@@ -525,6 +655,20 @@ function RestModal({ rest, onClose, userInfo }) {
   const handleConfirm = () => {
     // Save reservation to database
     saveReservation(rest.id, rest.name, rest.cuisine, selDate, selTime, selGuests, userInfo);
+    
+    // Add to notifications
+    onAddNotification({
+      type: "reservation",
+      restaurantName: rest.name,
+      cuisine: rest.cuisine,
+      priceRange: rest.priceRange,
+      date: selDate,
+      time: selTime,
+      guests: selGuests,
+      estWait: rest.wait,
+      userInfo: userInfo
+    });
+    
     setConfirmed(true);
   };
 
@@ -661,7 +805,7 @@ function LoginTab({ userInfo, onUserUpdate }) {
             <label style={{ display: "block", fontSize: 12, color: "#94a3b8", marginBottom: 8, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>Full Name</label>
             <input
               type="text"
-              placeholder="John Doe"
+              placeholder=""
               value={name}
               onChange={e => setName(e.target.value)}
               style={{
@@ -692,7 +836,7 @@ function LoginTab({ userInfo, onUserUpdate }) {
             <label style={{ display: "block", fontSize: 12, color: "#94a3b8", marginBottom: 8, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>Email</label>
             <input
               type="email"
-              placeholder="john@example.com"
+              placeholder=""
               value={email}
               onChange={e => setEmail(e.target.value)}
               style={{
@@ -723,7 +867,7 @@ function LoginTab({ userInfo, onUserUpdate }) {
             <label style={{ display: "block", fontSize: 12, color: "#94a3b8", marginBottom: 8, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>Phone Number</label>
             <input
               type="tel"
-              placeholder="+91 9876543210"
+              placeholder=""
               value={phone}
               onChange={e => setPhone(e.target.value)}
               style={{
@@ -816,8 +960,6 @@ function LoginTab({ userInfo, onUserUpdate }) {
 function HomeTab({ lastBooking, onBook, onShowDoctors }) {
   const [docCount, setDocCount] = useState(0);
   const [apptCount, setApptCount] = useState(0);
-  const [queueAhead, setQueueAhead] = useState(null);
-  const [queueTotal, setQueueTotal] = useState(12);
   const [homeSearch, setHomeSearch] = useState("");
 
   // Counter animation
@@ -833,23 +975,6 @@ function HomeTab({ lastBooking, onBook, onShowDoctors }) {
     return () => clearInterval(step);
   }, []);
 
-  // Sync queue from lastBooking
-  useEffect(() => {
-    if (lastBooking) setQueueAhead(lastBooking.pos - 1);
-  }, [lastBooking]);
-
-  // Live queue simulation
-  useEffect(() => {
-    if (!lastBooking) return;
-    const iv = setInterval(() => {
-      if (Math.random() < 0.3) {
-        setQueueAhead(v => (v > 0 ? v - 1 : v));
-        setQueueTotal(v => Math.max(v - 1, 1));
-      }
-    }, 4000);
-    return () => clearInterval(iv);
-  }, [lastBooking]);
-
   const handleSearch = (v) => {
     setHomeSearch(v);
     if (v.trim()) onShowDoctors(v);
@@ -861,62 +986,15 @@ function HomeTab({ lastBooking, onBook, onShowDoctors }) {
         <div className="hero-badge"><span></span>Live Queue Updates</div>
         <h1>Skip the Wait,<br /><span>Not the Care</span></h1>
         <p>Real-time appointment booking with live queue tracking. Know your exact wait time before you arrive.</p>
-        <div className="stats-row">
-          <div className="stat-card">
-            <div className="stat-num">{docCount.toLocaleString()}</div>
-            <div className="stat-label">Doctors</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-num green">{apptCount.toLocaleString()}</div>
-            <div className="stat-label">Today</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-num amber">~12</div>
-            <div className="stat-label">Avg Wait</div>
-          </div>
-        </div>
+
         <div className="search-bar">
-          <span className="search-icon"><span className="search-icon">🔍</span>#128269;</span>
+          <span className="search-icon">🔍</span>
           <input type="text" placeholder="Search doctors, hospitals, specialties..." value={homeSearch}
             onChange={e => handleSearch(e.target.value)} />
         </div>
       </div>
 
-      {lastBooking && (
-        <div className="booking-banner">
-          <div className="bb-dot"></div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#34d399" }}>Appointment Confirmed!</div>
-            <div style={{ fontSize: 11, color: "#94a3b8" }}>
-              {lastBooking.doc.name} • {lastBooking.date} at {lastBooking.time} • Queue #{lastBooking.pos}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {lastBooking && (
-        <div className="queue-tracker">
-          <div className="qt-header">
-            Your Queue Position — {lastBooking.doc.name}{" "}
-            <span style={{ color: "#06b6d4", fontWeight: 700 }}>#{lastBooking.pos}</span>
-          </div>
-          <QueueVisual total={queueTotal} yourPos={lastBooking.pos} />
-          <div className="qt-stats">
-            <div className="qt-stat">
-              <div className="qt-stat-v">{queueAhead}</div>
-              <div className="qt-stat-l">Before You</div>
-            </div>
-            <div className="qt-stat">
-              <div className="qt-stat-v amber">~{(queueAhead ?? lastBooking.pos - 1) * lastBooking.doc.avgMin}m</div>
-              <div className="qt-stat-l">Est. Wait</div>
-            </div>
-            <div className="qt-stat">
-              <div className="qt-stat-v" style={{ color: "#a78bfa" }}>{lastBooking.time}</div>
-              <div className="qt-stat-l">Your Slot</div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="section">
         <div className="section-header">
@@ -955,7 +1033,7 @@ function DoctorsTab({ initialSearch, onBook }) {
         <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Find a Doctor</div>
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>Pune, Maharashtra — 127 available today</div>
         <div className="search-bar">
-          <span className="search-icon"><span className="search-icon">🔍</span>#128269;</span>
+          <span className="search-icon">🔍</span>
           <input type="text" placeholder="Search by name or specialty..." value={search}
             onChange={e => setSearch(e.target.value)} />
         </div>
@@ -1000,7 +1078,7 @@ function RestaurantsTab({ onBook }) {
         <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>Reserve a Table</div>
         <div style={{ fontSize: 13, color: "#64748b", marginBottom: 16 }}>Pune — 18 restaurants open now</div>
         <div className="search-bar">
-          <span className="search-icon"><span className="search-icon">🔍</span>#128269;</span>
+          <span className="search-icon">🔍</span>
           <input type="text" placeholder="Search restaurants or cuisine..." value={search}
             onChange={e => setSearch(e.target.value)} />
         </div>
@@ -1033,11 +1111,17 @@ export default function App() {
   const [lastBooking,  setLastBooking]  = useState(null);
   const [docSearch,    setDocSearch]    = useState("");
   const [userInfo,     setUserInfo]     = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const handleUserUpdate = (info) => {
     setUserInfo(info);
     setActiveTab("home");
   };
+
+  const handleAddNotification = useCallback((notification) => {
+    setNotifications(prev => [...prev, { ...notification, id: Date.now() }]);
+  }, []);
 
   const showDoctors = useCallback((search = "") => {
     setDocSearch(search);
@@ -1065,7 +1149,14 @@ export default function App() {
                   {label}
                 </button>
               ))}
-              <div className="ql-bell">&#x1F514;</div>
+              <div className="ql-bell" onClick={() => setShowNotifications(!showNotifications)} style={{ cursor: "pointer", position: "relative" }}>
+                &#x1F514;
+                {notifications.filter(n => n.userInfo.name === userInfo?.name && n.userInfo.email === userInfo?.email && n.userInfo.phone === userInfo?.phone).length > 0 && (
+                  <div style={{ position: "absolute", top: -4, right: -4, background: "#ef4444", color: "#fff", width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>
+                    {notifications.filter(n => n.userInfo.name === userInfo?.name && n.userInfo.email === userInfo?.email && n.userInfo.phone === userInfo?.phone).length}
+                  </div>
+                )}
+              </div>
             </nav>
 
             {activeTab === "home" && (
@@ -1082,10 +1173,13 @@ export default function App() {
             )}
 
             {bookingDoc && (
-              <BookingModal doc={bookingDoc} onClose={() => setBookingDoc(null)} onConfirm={handleBookConfirm} userInfo={userInfo} />
+              <BookingModal doc={bookingDoc} onClose={() => setBookingDoc(null)} onConfirm={handleBookConfirm} userInfo={userInfo} onAddNotification={handleAddNotification} />
             )}
             {bookingRest && (
-              <RestModal rest={bookingRest} onClose={() => setBookingRest(null)} userInfo={userInfo} />
+              <RestModal rest={bookingRest} onClose={() => setBookingRest(null)} userInfo={userInfo} onAddNotification={handleAddNotification} />
+            )}
+            {showNotifications && userInfo && (
+              <NotificationsModal notifications={notifications} userInfo={userInfo} onClose={() => setShowNotifications(false)} />
             )}
           </>
         )}
