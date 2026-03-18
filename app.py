@@ -12,9 +12,23 @@ CORS(app)
 @app.route('/api/appointments', methods=['POST'])
 def book_appointment():
     data = request.json
+    print("DEBUG: Received appointment data:", data)
+    
+    # Validate required fields
+    required_fields = ['doctor_id', 'doctor_name', 'specialty', 'hospital', 'fee',
+                      'patient_name', 'patient_email', 'patient_phone',
+                      'appointment_date', 'appointment_time']
+    missing_fields = [f for f in required_fields if f not in data or data[f] is None]
+    
+    if missing_fields:
+        error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+        print(f"DEBUG: {error_msg}")
+        return jsonify({'error': error_msg}), 400
+    
     connection = get_db_connection()
     
     if not connection:
+        print("DEBUG: Database connection failed")
         return jsonify({'error': 'Database connection failed'}), 500
     
     try:
@@ -32,15 +46,19 @@ def book_appointment():
             data['appointment_date'], data['appointment_time']
         )
         
+        print(f"DEBUG: Executing query with values: {values}")
         cursor.execute(query, values)
         connection.commit()
+        print(f"DEBUG: Appointment inserted with ID: {cursor.lastrowid}")
         return jsonify({
             'success': True, 
             'id': cursor.lastrowid,
             'message': 'Appointment booked successfully'
         }), 201
     except Error as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"DEBUG: Database error: {str(e)}")
+        connection.rollback()
+        return jsonify({'error': f"Database error: {str(e)}"}), 500
     finally:
         cursor.close()
         connection.close()
@@ -112,9 +130,23 @@ def cancel_appointment(id):
 @app.route('/api/reservations', methods=['POST'])
 def book_reservation():
     data = request.json
+    print("DEBUG: Received reservation data:", data)
+    
+    # Validate required fields
+    required_fields = ['restaurant_id', 'restaurant_name', 'cuisine',
+                      'customer_name', 'customer_email', 'customer_phone',
+                      'reservation_date', 'reservation_time', 'party_size']
+    missing_fields = [f for f in required_fields if f not in data or data[f] is None]
+    
+    if missing_fields:
+        error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+        print(f"DEBUG: {error_msg}")
+        return jsonify({'error': error_msg}), 400
+    
     connection = get_db_connection()
     
     if not connection:
+        print("DEBUG: Database connection failed")
         return jsonify({'error': 'Database connection failed'}), 500
     
     try:
@@ -131,15 +163,19 @@ def book_reservation():
             data['reservation_date'], data['reservation_time'], data['party_size']
         )
         
+        print(f"DEBUG: Executing query with values: {values}")
         cursor.execute(query, values)
         connection.commit()
+        print(f"DEBUG: Reservation inserted with ID: {cursor.lastrowid}")
         return jsonify({
             'success': True,
             'id': cursor.lastrowid,
             'message': 'Reservation booked successfully'
         }), 201
     except Error as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"DEBUG: Database error: {str(e)}")
+        connection.rollback()
+        return jsonify({'error': f"Database error: {str(e)}"}), 500
     finally:
         cursor.close()
         connection.close()
@@ -210,15 +246,42 @@ def cancel_reservation(id):
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
+    """Check API and database health"""
     connection = get_db_connection()
     
-    if connection:
+    if not connection:
+        return jsonify({
+            'status': 'error',
+            'message': 'Database connection failed',
+            'database': 'offline'
+        }), 500
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT COUNT(*) as count FROM appointments")
+        result = cursor.fetchone()
+        appointment_count = result['count'] if result else 0
+        
+        cursor.execute("SELECT COUNT(*) as count FROM restaurant_reservations")
+        reservation_result = cursor.fetchone()
+        reservation_count = reservation_result['count'] if reservation_result else 0
+        
+        return jsonify({
+            'status': 'ok',
+            'database': 'online',
+            'appointments_count': appointment_count,
+            'reservations_count': reservation_count,
+            'message': 'API is running and database is connected'
+        }), 200
+    except Error as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Database query failed: {str(e)}',
+            'database': 'error'
+        }), 500
+    finally:
+        cursor.close()
         connection.close()
-        return jsonify({'status': 'healthy', 'database': 'connected'}), 200
-    else:
-        return jsonify({'status': 'unhealthy', 'database': 'disconnected'}), 500
-
-# ─── ERROR HANDLERS ──────────────────────────────────────────────────────────
 
 @app.errorhandler(404)
 def not_found(error):
