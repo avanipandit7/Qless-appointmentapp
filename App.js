@@ -23,8 +23,17 @@ function formatTimeForDB(timeStr) {
 
 async function saveAppointment(doctorId, doctorName, specialty, hospital, fee, date, time, userInfo) {
   try {
+    console.log("=== SAVING APPOINTMENT ===");
+    
     const formattedDate = formatDateForDB(date);
     const formattedTime = formatTimeForDB(time);
+    
+    console.log("Formatted Date:", formattedDate);
+    console.log("Formatted Time:", formattedTime);
+    
+    if (!formattedDate || !formattedTime) {
+      return { success: false, error: "Invalid date or time format" };
+    }
     
     const response = await fetch(`${API_URL}/appointments`, {
       method: "POST",
@@ -42,18 +51,37 @@ async function saveAppointment(doctorId, doctorName, specialty, hospital, fee, d
         appointment_time: formattedTime
       })
     });
+    
+    console.log("Response status:", response.status);
+    
+    if (!response.ok) {
+      const error = await response.json();
+      console.error("API Error:", error);
+      return { success: false, error: error.error || "Failed to book appointment" };
+    }
+    
     const result = await response.json();
-    console.log("Appointment saved:", result);
-    return result;
+    console.log("✓ Appointment saved successfully:", result);
+    return { success: true, ...result };
   } catch (error) {
-    console.error("Error saving appointment:", error);
+    console.error("✗ Error saving appointment:", error.message);
+    return { success: false, error: error.message };
   }
 }
 
 async function saveReservation(restaurantId, restaurantName, cuisine, date, time, partySize, userInfo) {
   try {
+    console.log("=== SAVING RESERVATION ===");
+    
     const formattedDate = formatDateForDB(date);
     const formattedTime = formatTimeForDB(time);
+    
+    console.log("Formatted Date:", formattedDate);
+    console.log("Formatted Time:", formattedTime);
+    
+    if (!formattedDate || !formattedTime) {
+      return { success: false, error: "Invalid date or time format" };
+    }
     
     const response = await fetch(`${API_URL}/reservations`, {
       method: "POST",
@@ -70,11 +98,21 @@ async function saveReservation(restaurantId, restaurantName, cuisine, date, time
         party_size: partySize
       })
     });
+    
+    console.log("Response status:", response.status);
+    
+    if (!response.ok) {
+      const error = await response.json();
+      console.error("API Error:", error);
+      return { success: false, error: error.error || "Failed to make reservation" };
+    }
+    
     const result = await response.json();
-    console.log("Reservation saved:", result);
-    return result;
+    console.log("✓ Reservation saved successfully:", result);
+    return { success: true, ...result };
   } catch (error) {
-    console.error("Error saving reservation:", error);
+    console.error("✗ Error saving reservation:", error.message);
+    return { success: false, error: error.message };
   }
 }
 
@@ -141,24 +179,24 @@ body{background:#05091a}
 
 /* NAV */
 .ql-nav{position:sticky;top:0;z-index:100;background:rgba(5,9,26,0.92);backdrop-filter:blur(12px);border-bottom:1px solid #1e3058;padding:0 20px;display:flex;align-items:center;height:60px;gap:12px}
-.ql-logo{font-size:22px;font-weight:800;background:linear-gradient(135deg,#06b6d4,#10b981);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.5px;flex:1}
+.ql-logo{font-size:32px;font-weight:800;background:linear-gradient(135deg,#06b6d4,#10b981);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-0.5px;flex:1}
 .ql-navbtn{background:none;border:none;color:#94a3b8;font-family:'Outfit',sans-serif;font-size:13px;font-weight:500;padding:6px 12px;border-radius:20px;cursor:pointer;transition:all .2s;white-space:nowrap}
 .ql-navbtn.active{background:rgba(6,182,212,0.15);color:#06b6d4;border:1px solid rgba(6,182,212,0.3)}
 .ql-navbtn:hover:not(.active){background:rgba(255,255,255,0.05);color:#e2e8f0}
 .ql-bell{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.05);border:1px solid #1e3058;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#94a3b8;font-size:14px;flex-shrink:0}
 
 /* HERO */
-.hero{padding:28px 20px 20px;text-align:center;position:relative;overflow:hidden;max-width:560px;margin:0 auto}
+.hero{padding:28px 40px 20px;text-align:center;position:relative;overflow:hidden;width:100%}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(6,182,212,0.12),transparent);pointer-events:none}
 .hero-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(6,182,212,0.1);border:1px solid rgba(6,182,212,0.25);color:#06b6d4;font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;margin-bottom:12px;letter-spacing:0.5px;text-transform:uppercase}
 .hero-badge span{width:6px;height:6px;background:#06b6d4;border-radius:50%;animation:pulse-dot 1.5s ease-in-out infinite}
 @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.4)}}
 .hero h1{font-size:clamp(36px,8vw,56px);font-weight:800;line-height:1.1;margin-bottom:10px;letter-spacing:-1px}
 .hero h1 span{background:linear-gradient(135deg,#06b6d4 20%,#10b981 80%);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.hero p{color:#94a3b8;font-size:14px;max-width:380px;margin:0 auto 20px;line-height:1.6}
+.hero p{color:#94a3b8;font-size:14px;margin:0 auto 20px;line-height:1.6}
 
 /* STATS */
-.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:380px;margin:0 auto 20px}
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 auto 20px;max-width:600px}
 .stat-card{background:rgba(13,20,40,0.8);border:1px solid #1e3058;border-radius:14px;padding:12px 8px;text-align:center}
 .stat-num{font-size:clamp(18px,3.5vw,28px);font-weight:800;color:#06b6d4;line-height:1}
 .stat-num.green{color:#10b981}
@@ -166,14 +204,14 @@ body{background:#05091a}
 .stat-label{font-size:11px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:0.5px}
 
 /* SEARCH */
-.search-bar{display:flex;align-items:center;gap:8px;background:#0d1428;border:1px solid #1e3058;border-radius:12px;padding:10px 14px;max-width:380px;margin:0 auto 20px;transition:border-color .2s}
+.search-bar{display:flex;align-items:center;gap:8px;background:#0d1428;border:1px solid #1e3058;border-radius:12px;padding:10px 14px;max-width:600px;margin:0 auto 20px;transition:border-color .2s}
 .search-bar:focus-within{border-color:#06b6d4}
 .search-bar input{flex:1;background:none;border:none;color:#e2e8f0;font-family:'Outfit',sans-serif;font-size:14px;outline:none}
 .search-bar input::placeholder{color:#4a5568}
 .search-icon{color:#4a5568;font-size:16px}
 
 /* SECTION */
-.section{padding:24px 16px}
+.section{padding:24px 40px}
 .section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .section-title{font-size:17px;font-weight:700;color:#e2e8f0}
 .see-all{font-size:12px;color:#06b6d4;background:none;border:none;cursor:pointer;font-family:'Outfit',sans-serif;font-weight:500}
@@ -413,32 +451,60 @@ function BookingModal({ doc, onClose, onConfirm, userInfo, onAddNotification }) 
   const [selTime, setSelTime]   = useState(null);
   const [confirmed, setConfirmed] = useState(false);
   const [summary, setSummary]   = useState(null);
+  const [saveError, setSaveError] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const dates = getDates();
   const wait  = doc.queue * doc.avgMin;
   const wStr  = wait < 60 ? `${wait} mins` : `${Math.floor(wait/60)}h ${wait%60}m`;
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    // Validate selections
+    if (!selDate || !selTime) {
+      setSaveError("Please select both date and time");
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+    
     const pos = doc.queue + 1;
-    setSummary({ doc, date: selDate, time: selTime, pos });
-    setConfirmed(true);
-    // Save appointment to database
-    saveAppointment(doc.id, doc.name, doc.spec, doc.hospital, doc.fee, selDate, selTime, userInfo);
     
-    // Add to notifications
-    onAddNotification({
-      type: "appointment",
-      doctorName: doc.name,
-      specialty: doc.spec,
-      hospital: doc.hospital,
-      fee: doc.fee,
-      date: selDate,
-      time: selTime,
-      queuePos: pos,
-      userInfo: userInfo
-    });
-    
-    onConfirm({ doc, date: selDate, time: selTime, pos });
+    try {
+      // Save appointment to database
+      console.log("DEBUG: Starting save with date:", selDate, "time:", selTime);
+      const result = await saveAppointment(doc.id, doc.name, doc.spec, doc.hospital, doc.fee, selDate, selTime, userInfo);
+      
+      if (!result.success) {
+        setSaveError(`Failed to save appointment: ${result.error}`);
+        setIsSaving(false);
+        return;
+      }
+      
+      // Only show success if save succeeded
+      setSummary({ doc, date: selDate, time: selTime, pos, appointmentId: result.id });
+      setConfirmed(true);
+      
+      // Add to notifications
+      onAddNotification({
+        type: "appointment",
+        doctorName: doc.name,
+        specialty: doc.spec,
+        hospital: doc.hospital,
+        fee: doc.fee,
+        date: selDate,
+        time: selTime,
+        queuePos: pos,
+        userInfo: userInfo
+      });
+      
+      onConfirm({ doc, date: selDate, time: selTime, pos });
+      setIsSaving(false);
+    } catch (error) {
+      console.error("Booking error:", error);
+      setSaveError(`Error: ${error.message}`);
+      setIsSaving(false);
+    }
   };
 
   return (
