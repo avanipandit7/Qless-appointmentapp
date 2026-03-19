@@ -595,36 +595,62 @@ function BookingModal({ doc, onClose, onConfirm, userInfo, onAddNotification }) 
 // ─── NOTIFICATIONS MODAL ─────────────────────────────────────────────────────
 
 function NotificationsModal({ notifications, userInfo, onClose }) {
-  // Group notifications by user (name, email, phone)
-  const userNotifications = notifications.filter(n => 
-    n.userInfo.name === userInfo.name && 
-    n.userInfo.email === userInfo.email && 
-    n.userInfo.phone === userInfo.phone
-  );
-  
-  // Live queue tracking
+  const [appointments, setAppointments] = useState([]);
+  const [reservations, setReservations] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [queueData, setQueueData] = useState({});
-  
+
+  // Fetch all user bookings from database
   useEffect(() => {
-    // Initialize queue data for each appointment
-    const initialQueueData = {};
-    userNotifications.forEach((n, idx) => {
-      if (n.type === "appointment" && !initialQueueData[idx]) {
-        initialQueueData[idx] = { queueAhead: n.queuePos - 1, queueTotal: n.queuePos + 8 };
+    if (!userInfo) return;
+    fetchAllBookings();
+  }, [userInfo]);
+
+  const fetchAllBookings = async () => {
+    setLoading(true);
+    try {
+      const [apptRes, resRes] = await Promise.all([
+        fetch(`${API_URL}/appointments`),
+        fetch(`${API_URL}/reservations`)
+      ]);
+
+      if (apptRes.ok && resRes.ok) {
+        const appts = await apptRes.json();
+        const ress = await resRes.json();
+
+        // Filter by current user
+        const userAppts = appts.filter(a =>
+          a.patient_name === userInfo.name && 
+          a.patient_email === userInfo.email && 
+          a.patient_phone === userInfo.phone
+        );
+
+        const userRess = ress.filter(r =>
+          r.customer_name === userInfo.name && 
+          r.customer_email === userInfo.email && 
+          r.customer_phone === userInfo.phone
+        );
+
+        setAppointments(userAppts);
+        setReservations(userRess);
       }
-    });
-    setQueueData(initialQueueData);
-    
-    // Simulate live queue updates
+    } catch (err) {
+      console.error("Error fetching bookings:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Simulate live queue updates
+  useEffect(() => {
     const interval = setInterval(() => {
       setQueueData(prev => {
         const updated = { ...prev };
-        userNotifications.forEach((n, idx) => {
-          if (n.type === "appointment" && updated[idx]) {
+        appointments.forEach((appt, idx) => {
+          if (updated[`appt-${idx}`]) {
             // Randomly reduce queue people ahead
-            if (Math.random() < 0.3 && updated[idx].queueAhead > 0) {
-              updated[idx].queueAhead -= 1;
-              updated[idx].queueTotal = Math.max(updated[idx].queueTotal - 1, 1);
+            if (Math.random() < 0.3 && updated[`appt-${idx}`].queueAhead > 0) {
+              updated[`appt-${idx}`].queueAhead -= 1;
             }
           }
         });
@@ -633,7 +659,7 @@ function NotificationsModal({ notifications, userInfo, onClose }) {
     }, 4000);
     
     return () => clearInterval(interval);
-  }, [userNotifications]);
+  }, [appointments]);
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -643,7 +669,9 @@ function NotificationsModal({ notifications, userInfo, onClose }) {
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
         
-        {userNotifications.length === 0 ? (
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "40px 20px", color: "#94a3b8" }}>Loading...</div>
+        ) : (appointments.length === 0 && reservations.length === 0) ? (
           <div style={{ textAlign: "center", padding: "40px 20px", color: "#94a3b8" }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
             <div style={{ fontSize: 14, fontWeight: 600 }}>No bookings yet</div>
@@ -651,53 +679,38 @@ function NotificationsModal({ notifications, userInfo, onClose }) {
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12, maxHeight: "60vh", overflowY: "auto" }}>
-            {userNotifications.map((n, idx) => (
-              <div key={idx} style={{ background: "#111c35", border: "1px solid #1e3058", borderRadius: 14, padding: 14 }}>
+            {appointments.map((appt, idx) => (
+              <div key={`appt-${appt.id}`} style={{ background: "#111c35", border: "1px solid #1e3058", borderRadius: 14, padding: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0" }}>
-                      {n.type === "appointment" ? n.doctorName : n.restaurantName}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#06b6d4", marginTop: 2 }}>
-                      {n.type === "appointment" ? n.specialty : n.cuisine}
-                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0" }}>{appt.doctor_name}</div>
+                    <div style={{ fontSize: 12, color: "#06b6d4", marginTop: 2 }}>{appt.specialty}</div>
                   </div>
-                  <div style={{ fontSize: 20, background: "rgba(6,182,212,0.12)", padding: "4px 8px", borderRadius: 6 }}>
-                    {n.type === "appointment" ? "🏥" : "🍽️"}
-                  </div>
+                  <div style={{ fontSize: 20, background: "rgba(6,182,212,0.12)", padding: "4px 8px", borderRadius: 6 }}>🏥</div>
                 </div>
-                
                 <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
-                  {n.type === "appointment" ? (
-                    <>
-                      <div><span style={{ color: "#64748b" }}>Hospital:</span> {n.hospital}</div>
-                      <div><span style={{ color: "#64748b" }}>Date:</span> {n.date}</div>
-                      <div><span style={{ color: "#64748b" }}>Time:</span> {n.time}</div>
-                      <div><span style={{ color: "#64748b" }}>Fee:</span> {n.fee}</div>
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #1e3058" }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#e2e8f0", marginBottom: 8 }}>Live Queue Status</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                          <div style={{ background: "rgba(6,182,212,0.08)", padding: 8, borderRadius: 8, border: "1px solid rgba(6,182,212,0.2)" }}>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: "#06b6d4" }}>{queueData[userNotifications.indexOf(n)]?.queueAhead ?? n.queuePos - 1}</div>
-                            <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>Before You</div>
-                          </div>
-                          <div style={{ background: "rgba(245,158,11,0.08)", padding: 8, borderRadius: 8, border: "1px solid rgba(245,158,11,0.2)" }}>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: "#f59e0b" }}>~{((queueData[userNotifications.indexOf(n)]?.queueAhead ?? n.queuePos - 1) * 15)}m</div>
-                            <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>Est. Wait</div>
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div><span style={{ color: "#64748b" }}>Cuisine:</span> {n.cuisine}</div>
-                      <div><span style={{ color: "#64748b" }}>Price Range:</span> {n.priceRange}</div>
-                      <div><span style={{ color: "#64748b" }}>Date:</span> {n.date}</div>
-                      <div><span style={{ color: "#64748b" }}>Time:</span> {n.time}</div>
-                      <div><span style={{ color: "#64748b" }}>Guests:</span> {n.guests}</div>
-                      <div><span style={{ color: "#64748b" }}>Est. Wait:</span> ~{n.estWait}m</div>
-                    </>
-                  )}
+                  <div><span style={{ color: "#64748b" }}>Hospital:</span> {appt.hospital}</div>
+                  <div><span style={{ color: "#64748b" }}>Date:</span> {appt.appointment_date}</div>
+                  <div><span style={{ color: "#64748b" }}>Time:</span> {appt.appointment_time}</div>
+                  <div><span style={{ color: "#64748b" }}>Fee:</span> {appt.fee}</div>
+                  <div style={{ display: "inline-block", marginTop: 8, padding: "3px 8px", background: appt.status === "booked" ? "rgba(6,182,212,0.2)" : appt.status === "completed" ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", color: appt.status === "booked" ? "#06b6d4" : appt.status === "completed" ? "#10b981" : "#ef4444", borderRadius: "6px", fontSize: "10px", fontWeight: 600 }}>{appt.status}</div>
+                </div>
+              </div>
+            ))}
+            {reservations.map((res) => (
+              <div key={`res-${res.id}`} style={{ background: "#111c35", border: "1px solid #1e3058", borderRadius: 14, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0" }}>{res.restaurant_name}</div>
+                    <div style={{ fontSize: 12, color: "#10b981", marginTop: 2 }}>{res.cuisine}</div>
+                  </div>
+                  <div style={{ fontSize: 20, background: "rgba(16,185,129,0.12)", padding: "4px 8px", borderRadius: 6 }}>🍽️</div>
+                </div>
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                  <div><span style={{ color: "#64748b" }}>Date:</span> {res.reservation_date}</div>
+                  <div><span style={{ color: "#64748b" }}>Time:</span> {res.reservation_time}</div>
+                  <div><span style={{ color: "#64748b" }}>Party Size:</span> {res.party_size} guests</div>
+                  <div style={{ display: "inline-block", marginTop: 8, padding: "3px 8px", background: res.status === "confirmed" ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)", color: res.status === "confirmed" ? "#10b981" : "#ef4444", borderRadius: "6px", fontSize: "10px", fontWeight: 600 }}>{res.status}</div>
                 </div>
               </div>
             ))}
@@ -715,27 +728,51 @@ function RestModal({ rest, onClose, userInfo, onAddNotification }) {
   const [selDate,     setSelDate]     = useState(null);
   const [selTime,     setSelTime]     = useState(null);
   const [confirmed,   setConfirmed]   = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const dates = getDates();
 
-  const handleConfirm = () => {
-    // Save reservation to database
-    saveReservation(rest.id, rest.name, rest.cuisine, selDate, selTime, selGuests, userInfo);
-    
-    // Add to notifications
-    onAddNotification({
-      type: "reservation",
-      restaurantName: rest.name,
-      cuisine: rest.cuisine,
-      priceRange: rest.priceRange,
-      date: selDate,
-      time: selTime,
-      guests: selGuests,
-      estWait: rest.wait,
-      userInfo: userInfo
-    });
-    
-    setConfirmed(true);
+  const handleConfirm = async () => {
+    if (!selGuests || !selDate || !selTime) {
+      setSaveError("Please select guests, date, and time");
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      // Save reservation to database
+      const result = await saveReservation(rest.id, rest.name, rest.cuisine, selDate, selTime, selGuests, userInfo);
+      
+      if (!result.success) {
+        setSaveError(`Failed to save reservation: ${result.error}`);
+        setIsSaving(false);
+        return;
+      }
+      
+      // Add to notifications
+      onAddNotification({
+        type: "reservation",
+        restaurantName: rest.name,
+        cuisine: rest.cuisine,
+        priceRange: rest.priceRange,
+        date: selDate,
+        time: selTime,
+        guests: selGuests,
+        estWait: rest.wait,
+        userInfo: userInfo,
+        reservationId: result.id
+      });
+      
+      setConfirmed(true);
+      setIsSaving(false);
+    } catch (error) {
+      console.error("Reservation error:", error);
+      setSaveError(`Error: ${error.message}`);
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -779,8 +816,21 @@ function RestModal({ rest, onClose, userInfo, onAddNotification }) {
                 <button key={t} className={`time-btn${selTime === t ? " sel" : ""}`} onClick={() => setSelTime(t)}>{t}</button>
               ))}
             </div>
-            <button className="confirm-btn" disabled={!selGuests || !selDate || !selTime} onClick={handleConfirm}>
-              Confirm Reservation
+            {saveError && (
+              <div style={{
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.3)",
+                color: "#fca5a5",
+                padding: "10px 12px",
+                borderRadius: "10px",
+                marginBottom: "14px",
+                fontSize: "12px"
+              }}>
+                {saveError}
+              </div>
+            )}
+            <button className="confirm-btn" disabled={!selGuests || !selDate || !selTime || isSaving} onClick={handleConfirm}>
+              {isSaving ? "Confirming..." : "Confirm Reservation"}
             </button>
           </>
         ) : (
