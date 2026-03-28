@@ -2,7 +2,120 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── API FUNCTIONS ───────────────────────────────────────────────────────────
 
-const API_URL = "http://localhost:5000/api";
+const API_BASES = [
+  "/api",
+  process.env.REACT_APP_API_URL,
+  "http://localhost:5000/api",
+  "http://127.0.0.1:5000/api"
+].filter(Boolean);
+
+function buildApiUrl(base, path) {
+  return `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+}
+
+function normalizeValue(value) {
+  return (value || "").toString().trim().toLowerCase();
+}
+
+function sanitizeUserInfo(userInfo) {
+  return {
+    name: (userInfo?.name || "User").toString().trim(),
+    email: normalizeValue(userInfo?.email || "user@example.com"),
+    phone: (userInfo?.phone || "1234567890").toString().trim(),
+  };
+}
+
+function isSameUser(record, currentUser, keys) {
+  const email = normalizeValue(record?.[keys.email]);
+  const phone = normalizeValue(record?.[keys.phone]);
+  const name = normalizeValue(record?.[keys.name]);
+
+  const currentEmail = normalizeValue(currentUser?.email);
+  const currentPhone = normalizeValue(currentUser?.phone);
+  const currentName = normalizeValue(currentUser?.name);
+
+  const emailMatch = email && currentEmail && email === currentEmail;
+  const phoneMatch = phone && currentPhone && phone === currentPhone;
+  const nameMatch = name && currentName && name === currentName;
+
+  // Prefer stable identifiers (email/phone). Name is fallback for older rows.
+  return emailMatch || phoneMatch || nameMatch;
+}
+
+async function apiRequest(path, options = {}) {
+  let lastError = null;
+  let lastResponseError = null;
+  let sawNetworkError = false;
+
+  for (let i = 0; i < API_BASES.length; i++) {
+    const base = API_BASES[i];
+    const isLastBase = i === API_BASES.length - 1;
+    const url = buildApiUrl(base, path);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      let payload = null;
+      const text = await response.text();
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          payload = null;
+        }
+      }
+
+      if (!response.ok) {
+        lastResponseError = {
+          ok: false,
+          status: response.status,
+          data: payload,
+          error: payload?.error || `Request failed with status ${response.status}`,
+        };
+
+        // If this base doesn't have the API route, try next configured base.
+        if (response.status === 404 && !isLastBase) {
+          continue;
+        }
+
+        return lastResponseError;
+      }
+
+      return { ok: true, status: response.status, data: payload };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      lastError = error;
+      sawNetworkError = true;
+    }
+  }
+
+  if (sawNetworkError && lastError) {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: lastError?.name === "AbortError"
+        ? "API request timed out. Please check backend server."
+        : "Cannot reach API server. Start backend and verify port 5000.",
+    };
+  }
+
+  if (lastResponseError) {
+    return lastResponseError;
+  }
+
+  return {
+    ok: false,
+    status: 0,
+    data: null,
+    error: lastError?.name === "AbortError"
+      ? "API request timed out. Please check backend server."
+      : "Cannot reach API server. Start backend and verify port 5000.",
+  };
+}
 
 // Convert date string like "18 Mar" to "2026-03-18"
 function formatDateForDB(dateStr) {
@@ -12,7 +125,10 @@ function formatDateForDB(dateStr) {
   const months = { "Jan": 0, "Feb": 1, "Mar": 2, "Apr": 3, "May": 4, "Jun": 5, 
                    "Jul": 6, "Aug": 7, "Sep": 8, "Oct": 9, "Nov": 10, "Dec": 11 };
   const date = new Date(now.getFullYear(), months[month], parseInt(day));
-  return date.toISOString().split('T')[0];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 // Convert time like "10:00" to "10:00:00"
@@ -35,7 +151,9 @@ async function saveAppointment(doctorId, doctorName, specialty, hospital, fee, d
       return { success: false, error: "Invalid date or time format" };
     }
     
-    const response = await fetch(`${API_URL}/appointments`, {
+    const normalizedUser = sanitizeUserInfo(userInfo);
+
+    const response = await apiRequest("/appointments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -44,9 +162,9 @@ async function saveAppointment(doctorId, doctorName, specialty, hospital, fee, d
         specialty: specialty,
         hospital: hospital,
         fee: fee,
-        patient_name: userInfo?.name || "User",
-        patient_email: userInfo?.email || "user@example.com",
-        patient_phone: userInfo?.phone || "1234567890",
+        patient_name: normalizedUser.name,
+        patient_email: normalizedUser.email,
+        patient_phone: normalizedUser.phone,
         appointment_date: formattedDate,
         appointment_time: formattedTime
       })
@@ -55,12 +173,11 @@ async function saveAppointment(doctorId, doctorName, specialty, hospital, fee, d
     console.log("Response status:", response.status);
     
     if (!response.ok) {
-      const error = await response.json();
-      console.error("API Error:", error);
-      return { success: false, error: error.error || "Failed to book appointment" };
+      console.error("API Error:", response.error);
+      return { success: false, error: response.error || "Failed to book appointment" };
     }
     
-    const result = await response.json();
+    const result = response.data || {};
     console.log("✓ Appointment saved successfully:", result);
     return { success: true, ...result };
   } catch (error) {
@@ -83,16 +200,18 @@ async function saveReservation(restaurantId, restaurantName, cuisine, date, time
       return { success: false, error: "Invalid date or time format" };
     }
     
-    const response = await fetch(`${API_URL}/reservations`, {
+    const normalizedUser = sanitizeUserInfo(userInfo);
+
+    const response = await apiRequest("/reservations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         restaurant_id: restaurantId,
         restaurant_name: restaurantName,
         cuisine: cuisine,
-        customer_name: userInfo?.name || "User",
-        customer_email: userInfo?.email || "user@example.com",
-        customer_phone: userInfo?.phone || "1234567890",
+        customer_name: normalizedUser.name,
+        customer_email: normalizedUser.email,
+        customer_phone: normalizedUser.phone,
         reservation_date: formattedDate,
         reservation_time: formattedTime,
         party_size: partySize
@@ -102,12 +221,11 @@ async function saveReservation(restaurantId, restaurantName, cuisine, date, time
     console.log("Response status:", response.status);
     
     if (!response.ok) {
-      const error = await response.json();
-      console.error("API Error:", error);
-      return { success: false, error: error.error || "Failed to make reservation" };
+      console.error("API Error:", response.error);
+      return { success: false, error: response.error || "Failed to make reservation" };
     }
     
-    const result = await response.json();
+    const result = response.data || {};
     console.log("✓ Reservation saved successfully:", result);
     return { success: true, ...result };
   } catch (error) {
@@ -474,29 +592,33 @@ function BookingModal({ doc, onClose, onConfirm, userInfo, onAddNotification }) 
       // Save appointment to database
       console.log("DEBUG: Starting save with date:", selDate, "time:", selTime);
       const result = await saveAppointment(doc.id, doc.name, doc.spec, doc.hospital, doc.fee, selDate, selTime, userInfo);
-      
+
       if (!result.success) {
         setSaveError(`Failed to save appointment: ${result.error}`);
         setIsSaving(false);
         return;
       }
-      
-      // Only show success if save succeeded
+
       setSummary({ doc, date: selDate, time: selTime, pos, appointmentId: result.id });
       setConfirmed(true);
-      
-      // Add to notifications
-      onAddNotification({
-        type: "appointment",
-        doctorName: doc.name,
-        specialty: doc.spec,
-        hospital: doc.hospital,
-        fee: doc.fee,
-        date: selDate,
-        time: selTime,
-        queuePos: pos,
-        userInfo: userInfo
-      });
+
+      // Keep booking success independent from notification update failures.
+      try {
+        onAddNotification({
+          type: "appointment",
+          appointmentId: result.id,
+          doctorName: doc.name,
+          specialty: doc.spec,
+          hospital: doc.hospital,
+          fee: doc.fee,
+          date: selDate,
+          time: selTime,
+          queuePos: pos,
+          userInfo: userInfo
+        });
+      } catch (notificationError) {
+        console.error("Notification update error:", notificationError);
+      }
       
       onConfirm({ doc, date: selDate, time: selTime, pos });
       setIsSaving(false);
@@ -554,8 +676,22 @@ function BookingModal({ doc, onClose, onConfirm, userInfo, onAddNotification }) 
                 </button>
               ))}
             </div>
-            <button className="confirm-btn" disabled={!selDate || !selTime} onClick={handleConfirm}>
-              Confirm Appointment
+            {saveError && (
+              <div style={{
+                marginBottom: 12,
+                padding: "10px 12px",
+                background: "rgba(239,68,68,0.1)",
+                border: "1px solid rgba(239,68,68,0.35)",
+                borderRadius: 10,
+                color: "#fda4af",
+                fontSize: 12,
+                lineHeight: 1.4
+              }}>
+                {saveError}
+              </div>
+            )}
+            <button className="confirm-btn" disabled={!selDate || !selTime || isSaving} onClick={handleConfirm}>
+              {isSaving ? "Confirming..." : "Confirm Appointment"}
             </button>
           </>
         ) : (
@@ -594,7 +730,7 @@ function BookingModal({ doc, onClose, onConfirm, userInfo, onAddNotification }) 
 
 // ─── NOTIFICATIONS MODAL ─────────────────────────────────────────────────────
 
-function NotificationsModal({ notifications, userInfo, onClose }) {
+function NotificationsModal({ userInfo, onClose, latestReceipt, refreshToken }) {
   const [appointments, setAppointments] = useState([]);
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -604,35 +740,44 @@ function NotificationsModal({ notifications, userInfo, onClose }) {
   useEffect(() => {
     if (!userInfo) return;
     fetchAllBookings();
-  }, [userInfo]);
+  }, [userInfo, refreshToken]);
 
   const fetchAllBookings = async () => {
     setLoading(true);
+
+    const currentUser = sanitizeUserInfo(userInfo);
+
     try {
       const [apptRes, resRes] = await Promise.all([
-        fetch(`${API_URL}/appointments`),
-        fetch(`${API_URL}/reservations`)
+        apiRequest("/appointments"),
+        apiRequest("/reservations")
       ]);
 
       if (apptRes.ok && resRes.ok) {
-        const appts = await apptRes.json();
-        const ress = await resRes.json();
+        const appts = apptRes.data || [];
+        const ress = resRes.data || [];
 
         // Filter by current user
         const userAppts = appts.filter(a =>
-          a.patient_name === userInfo.name && 
-          a.patient_email === userInfo.email && 
-          a.patient_phone === userInfo.phone
+          isSameUser(a, currentUser, {
+            name: "patient_name",
+            email: "patient_email",
+            phone: "patient_phone",
+          })
         );
 
         const userRess = ress.filter(r =>
-          r.customer_name === userInfo.name && 
-          r.customer_email === userInfo.email && 
-          r.customer_phone === userInfo.phone
+          isSameUser(r, currentUser, {
+            name: "customer_name",
+            email: "customer_email",
+            phone: "customer_phone",
+          })
         );
 
         setAppointments(userAppts);
         setReservations(userRess);
+      } else {
+        throw new Error(apptRes.error || resRes.error || "Failed to fetch bookings");
       }
     } catch (err) {
       console.error("Error fetching bookings:", err);
@@ -640,6 +785,79 @@ function NotificationsModal({ notifications, userInfo, onClose }) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!latestReceipt || !userInfo) return;
+    const currentUser = sanitizeUserInfo(userInfo);
+
+    if (latestReceipt.type === "appointment") {
+      if (!isSameUser({
+        patient_name: latestReceipt.userInfo?.name,
+        patient_email: latestReceipt.userInfo?.email,
+        patient_phone: latestReceipt.userInfo?.phone,
+      }, currentUser, {
+        name: "patient_name",
+        email: "patient_email",
+        phone: "patient_phone",
+      })) {
+        return;
+      }
+
+      setAppointments(prev => {
+        const newId = latestReceipt.appointmentId;
+        if (newId && prev.some(item => item.id === newId)) {
+          return prev;
+        }
+
+        const nextItem = {
+          id: newId || `local-appt-${Date.now()}`,
+          doctor_name: latestReceipt.doctorName,
+          specialty: latestReceipt.specialty,
+          hospital: latestReceipt.hospital,
+          fee: latestReceipt.fee,
+          appointment_date: formatDateForDB(latestReceipt.date),
+          appointment_time: formatTimeForDB(latestReceipt.time),
+          status: "booked",
+        };
+
+        return [nextItem, ...prev];
+      });
+      return;
+    }
+
+    if (latestReceipt.type === "reservation") {
+      if (!isSameUser({
+        customer_name: latestReceipt.userInfo?.name,
+        customer_email: latestReceipt.userInfo?.email,
+        customer_phone: latestReceipt.userInfo?.phone,
+      }, currentUser, {
+        name: "customer_name",
+        email: "customer_email",
+        phone: "customer_phone",
+      })) {
+        return;
+      }
+
+      setReservations(prev => {
+        const newId = latestReceipt.reservationId;
+        if (newId && prev.some(item => item.id === newId)) {
+          return prev;
+        }
+
+        const nextItem = {
+          id: newId || `local-res-${Date.now()}`,
+          restaurant_name: latestReceipt.restaurantName,
+          cuisine: latestReceipt.cuisine,
+          reservation_date: formatDateForDB(latestReceipt.date),
+          reservation_time: formatTimeForDB(latestReceipt.time),
+          party_size: latestReceipt.guests,
+          status: "confirmed",
+        };
+
+        return [nextItem, ...prev];
+      });
+    }
+  }, [latestReceipt, userInfo]);
   
   // Simulate live queue updates
   useEffect(() => {
@@ -723,7 +941,7 @@ function NotificationsModal({ notifications, userInfo, onClose }) {
 
 // ─── RESTAURANT MODAL ────────────────────────────────────────────────────────
 
-function RestModal({ rest, onClose, userInfo, onAddNotification }) {
+function RestModal({ rest, onClose, userInfo, onAddNotification, onConfirm }) {
   const [selGuests,   setSelGuests]   = useState(null);
   const [selDate,     setSelDate]     = useState(null);
   const [selTime,     setSelTime]     = useState(null);
@@ -745,7 +963,7 @@ function RestModal({ rest, onClose, userInfo, onAddNotification }) {
     try {
       // Save reservation to database
       const result = await saveReservation(rest.id, rest.name, rest.cuisine, selDate, selTime, selGuests, userInfo);
-      
+
       if (!result.success) {
         setSaveError(`Failed to save reservation: ${result.error}`);
         setIsSaving(false);
@@ -765,6 +983,11 @@ function RestModal({ rest, onClose, userInfo, onAddNotification }) {
         userInfo: userInfo,
         reservationId: result.id
       });
+      
+      // Trigger refresh token update
+      if (onConfirm) {
+        onConfirm({ rest, date: selDate, time: selTime, guests: selGuests });
+      }
       
       setConfirmed(true);
       setIsSaving(false);
@@ -873,7 +1096,11 @@ function LoginTab({ userInfo, onUserUpdate }) {
 
   const handleSave = () => {
     if (name && email && phone) {
-      onUserUpdate({ name, email, phone });
+      onUserUpdate({
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone.trim(),
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     }
@@ -1125,11 +1352,43 @@ function HomeTab({ lastBooking, onBook, onShowDoctors }) {
   );
 }
 
-function DoctorsTab({ initialSearch, onBook }) {
+function DoctorsTab({ initialSearch, onBook, userInfo, refreshToken }) {
   const [search, setSearch] = useState(initialSearch || "");
   const [activeSpec, setActiveSpec] = useState("All");
+  const [userAppointments, setUserAppointments] = useState([]);
+  const [loadingAppts, setLoadingAppts] = useState(false);
 
   useEffect(() => { if (initialSearch) setSearch(initialSearch); }, [initialSearch]);
+
+  // Fetch user's appointments
+  useEffect(() => {
+    if (!userInfo) return;
+    
+    const fetchUserAppointments = async () => {
+      setLoadingAppts(true);
+      const normalizedUser = sanitizeUserInfo(userInfo);
+      
+      try {
+        const res = await apiRequest("/appointments");
+        if (res.ok && res.data) {
+          const userAppts = res.data.filter(a =>
+            isSameUser(a, normalizedUser, {
+              name: "patient_name",
+              email: "patient_email",
+              phone: "patient_phone",
+            })
+          );
+          setUserAppointments(userAppts);
+        }
+      } catch (err) {
+        console.error("Error fetching appointments:", err);
+      } finally {
+        setLoadingAppts(false);
+      }
+    };
+    
+    fetchUserAppointments();
+  }, [userInfo, refreshToken]);
 
   const specs = ["All","Cardiologist","Dermatologist","Neurologist","Orthopedic","Pediatrician","General"];
   const specLabels = { All:"All", Cardiologist:"Cardiology", Dermatologist:"Dermatology",
@@ -1161,7 +1420,34 @@ function DoctorsTab({ initialSearch, onBook }) {
           ))}
         </div>
       </div>
-      <div className="section" style={{ paddingTop: 0 }}>
+      
+      {userAppointments.length > 0 && (
+        <div style={{ padding: "16px 40px" }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Your Appointments</div>
+          <div className="doc-grid">
+            {userAppointments.map((appt) => (
+              <div key={`appt-${appt.id}`} style={{ background: "rgba(106, 174, 112, 0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 14, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0" }}>{appt.doctor_name}</div>
+                    <div style={{ fontSize: 12, color: "#10b981", marginTop: 2 }}>{appt.specialty}</div>
+                  </div>
+                  <div style={{ fontSize: 18, background: "rgba(16,185,129,0.12)", padding: "4px 8px", borderRadius: 6 }}>✓</div>
+                </div>
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                  <div><span style={{ color: "#64748b" }}>Hospital:</span> {appt.hospital}</div>
+                  <div><span style={{ color: "#64748b" }}>Date:</span> {appt.appointment_date}</div>
+                  <div><span style={{ color: "#64748b" }}>Time:</span> {appt.appointment_time}</div>
+                  <div><span style={{ color: "#64748b" }}>Fee:</span> {appt.fee}</div>
+                  <div style={{ display: "inline-block", marginTop: 8, padding: "3px 8px", background: "rgba(16,185,129,0.2)", color: "#10b981", borderRadius: "6px", fontSize: "10px", fontWeight: 600 }}>{appt.status}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      <div className="section" style={{ paddingTop: userAppointments.length > 0 ? 0 : 0 }}>
         <div className="doc-grid">
           {filtered.length > 0
             ? filtered.map(d => <DocCard key={d.id} doc={d} onBook={onBook} />)
@@ -1173,9 +1459,41 @@ function DoctorsTab({ initialSearch, onBook }) {
   );
 }
 
-function RestaurantsTab({ onBook }) {
+function RestaurantsTab({ onBook, userInfo, refreshToken }) {
   const [search, setSearch]         = useState("");
   const [activeCuisine, setCuisine] = useState("All");
+  const [userReservations, setUserReservations] = useState([]);
+  const [loadingRess, setLoadingRess] = useState(false);
+
+  // Fetch user's reservations
+  useEffect(() => {
+    if (!userInfo) return;
+    
+    const fetchUserReservations = async () => {
+      setLoadingRess(true);
+      const normalizedUser = sanitizeUserInfo(userInfo);
+      
+      try {
+        const res = await apiRequest("/reservations");
+        if (res.ok && res.data) {
+          const userRess = res.data.filter(r =>
+            isSameUser(r, normalizedUser, {
+              name: "customer_name",
+              email: "customer_email",
+              phone: "customer_phone",
+            })
+          );
+          setUserReservations(userRess);
+        }
+      } catch (err) {
+        console.error("Error fetching reservations:", err);
+      } finally {
+        setLoadingRess(false);
+      }
+    };
+    
+    fetchUserReservations();
+  }, [userInfo, refreshToken]);
 
   const cuisines = ["All","Indian","Italian","Chinese","Japanese","Continental"];
   const cuisineLabels = { All:"All", Indian:"Indian", Italian:"Italian",
@@ -1206,7 +1524,33 @@ function RestaurantsTab({ onBook }) {
           ))}
         </div>
       </div>
-      <div className="section" style={{ paddingTop: 0 }}>
+      
+      {userReservations.length > 0 && (
+        <div style={{ padding: "16px 40px" }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Your Reservations</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
+            {userReservations.map((res) => (
+              <div key={`res-${res.id}`} style={{ background: "rgba(106, 174, 112, 0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 14, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0" }}>{res.restaurant_name}</div>
+                    <div style={{ fontSize: 12, color: "#10b981", marginTop: 2 }}>{res.cuisine}</div>
+                  </div>
+                  <div style={{ fontSize: 18, background: "rgba(16,185,129,0.12)", padding: "4px 8px", borderRadius: 6 }}>✓</div>
+                </div>
+                <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                  <div><span style={{ color: "#64748b" }}>Date:</span> {res.reservation_date}</div>
+                  <div><span style={{ color: "#64748b" }}>Time:</span> {res.reservation_time}</div>
+                  <div><span style={{ color: "#64748b" }}>Party Size:</span> {res.party_size} guests</div>
+                  <div style={{ display: "inline-block", marginTop: 8, padding: "3px 8px", background: "rgba(16,185,129,0.2)", color: "#10b981", borderRadius: "6px", fontSize: "10px", fontWeight: 600 }}>{res.status}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      <div className="section" style={{ paddingTop: userReservations.length > 0 ? 0 : 0 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 14 }}>
           {filtered.length > 0
             ? filtered.map(r => <RestCard key={r.id} r={r} onBook={onBook} />)
@@ -1227,17 +1571,61 @@ export default function App() {
   const [lastBooking,  setLastBooking]  = useState(null);
   const [docSearch,    setDocSearch]    = useState("");
   const [userInfo,     setUserInfo]     = useState(null);
-  const [notifications, setNotifications] = useState([]);
+  const [notificationCount, setNotificationCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [bookingsRefreshToken, setBookingsRefreshToken] = useState(0);
+  const [latestReceipt, setLatestReceipt] = useState(null);
 
   const handleUserUpdate = (info) => {
     setUserInfo(info);
     setActiveTab("home");
   };
 
-  const handleAddNotification = useCallback((notification) => {
-    setNotifications(prev => [...prev, { ...notification, id: Date.now() }]);
+  const refreshNotificationCount = useCallback(async (currentUser) => {
+    if (!currentUser) {
+      setNotificationCount(0);
+      return;
+    }
+
+    const normalizedUser = sanitizeUserInfo(currentUser);
+    const [apptRes, resRes] = await Promise.all([
+      apiRequest("/appointments"),
+      apiRequest("/reservations")
+    ]);
+
+    if (!apptRes.ok || !resRes.ok) {
+      return;
+    }
+
+    const apptCount = (apptRes.data || []).filter(a =>
+      isSameUser(a, normalizedUser, {
+        name: "patient_name",
+        email: "patient_email",
+        phone: "patient_phone",
+      })
+    ).length;
+
+    const resCount = (resRes.data || []).filter(r =>
+      isSameUser(r, normalizedUser, {
+        name: "customer_name",
+        email: "customer_email",
+        phone: "customer_phone",
+      })
+    ).length;
+
+    setNotificationCount(apptCount + resCount);
   }, []);
+
+  const handleAddNotification = useCallback((receipt) => {
+    if (receipt && typeof receipt === "object") {
+      setLatestReceipt({ ...receipt, createdAt: Date.now() });
+    }
+    refreshNotificationCount(userInfo);
+  }, [refreshNotificationCount, userInfo]);
+
+  useEffect(() => {
+    refreshNotificationCount(userInfo);
+  }, [refreshNotificationCount, userInfo]);
 
   const showDoctors = useCallback((search = "") => {
     setDocSearch(search);
@@ -1247,6 +1635,7 @@ export default function App() {
 
   const handleBookConfirm = useCallback((booking) => {
     setLastBooking(booking);
+    setBookingsRefreshToken(prev => prev + 1);
   }, []);
 
   return (
@@ -1267,9 +1656,9 @@ export default function App() {
               ))}
               <div className="ql-bell" onClick={() => setShowNotifications(!showNotifications)} style={{ cursor: "pointer", position: "relative" }}>
                 &#x1F514;
-                {notifications.filter(n => n.userInfo.name === userInfo?.name && n.userInfo.email === userInfo?.email && n.userInfo.phone === userInfo?.phone).length > 0 && (
+                {notificationCount > 0 && (
                   <div style={{ position: "absolute", top: -4, right: -4, background: "#ef4444", color: "#fff", width: 18, height: 18, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>
-                    {notifications.filter(n => n.userInfo.name === userInfo?.name && n.userInfo.email === userInfo?.email && n.userInfo.phone === userInfo?.phone).length}
+                    {notificationCount}
                   </div>
                 )}
               </div>
@@ -1279,10 +1668,10 @@ export default function App() {
               <HomeTab lastBooking={lastBooking} onBook={setBookingDoc} onShowDoctors={showDoctors} />
             )}
             {activeTab === "doctors" && (
-              <DoctorsTab initialSearch={docSearch} onBook={setBookingDoc} />
+              <DoctorsTab initialSearch={docSearch} onBook={setBookingDoc} userInfo={userInfo} refreshToken={bookingsRefreshToken} />
             )}
             {activeTab === "restaurants" && (
-              <RestaurantsTab onBook={setBookingRest} />
+              <RestaurantsTab onBook={setBookingRest} userInfo={userInfo} refreshToken={bookingsRefreshToken} />
             )}
             {activeTab === "profile" && (
               <LoginTab userInfo={userInfo} onUserUpdate={handleUserUpdate} />
@@ -1292,10 +1681,10 @@ export default function App() {
               <BookingModal doc={bookingDoc} onClose={() => setBookingDoc(null)} onConfirm={handleBookConfirm} userInfo={userInfo} onAddNotification={handleAddNotification} />
             )}
             {bookingRest && (
-              <RestModal rest={bookingRest} onClose={() => setBookingRest(null)} userInfo={userInfo} onAddNotification={handleAddNotification} />
+              <RestModal rest={bookingRest} onClose={() => setBookingRest(null)} userInfo={userInfo} onAddNotification={handleAddNotification} onConfirm={handleBookConfirm} />
             )}
             {showNotifications && userInfo && (
-              <NotificationsModal notifications={notifications} userInfo={userInfo} onClose={() => setShowNotifications(false)} />
+              <NotificationsModal userInfo={userInfo} onClose={() => setShowNotifications(false)} latestReceipt={latestReceipt} refreshToken={bookingsRefreshToken} />
             )}
           </>
         )}
