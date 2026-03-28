@@ -243,9 +243,11 @@ const DOCTORS = [
   { id: 4, name: "Dr. Vikram Joshi",   spec: "Orthopedic",    quals: ["MBBS","MS Ortho","DNB"],             hospital: "KEM Hospital",             dist: "3.1 km", rating: 4.9, queue: 5,  avgMin: 25, exp: "18 yrs", img: "https://images.unsplash.com/photo-1582750433449-648ed127bb54?w=120&h=120&fit=crop&crop=face", fee: "₹900",  available: true },
   { id: 5, name: "Dr. Sneha Kulkarni", spec: "Pediatrician",  quals: ["MBBS","MD Pediatrics","DNB"],        hospital: "Deenanath Mangeshkar",     dist: "1.5 km", rating: 4.8, queue: 9,  avgMin: 12, exp: "10 yrs", img: "https://images.unsplash.com/photo-1527613426441-4da17471b66d?w=120&h=120&fit=crop&crop=face", fee: "₹700",  available: true },
   { id: 6, name: "Dr. Amol Patil",     spec: "General",       quals: ["MBBS","MD General Medicine"],        hospital: "Poona Hospital",           dist: "0.5 km", rating: 4.6, queue: 15, avgMin: 8,  exp: "6 yrs",  img: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=120&h=120&fit=crop&crop=face", fee: "₹400",  available: true },
+  { id: 7, name: "Dr. Rucha Vaidya",   spec: "Physiotherapist", quals: ["MS Physiotherapy"],                 hospital: "Chellaram",               dist: "2.3 km", rating: 4.7, queue: 6,  avgMin: 18, exp: "10 yrs", img: "https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=120&h=120&fit=crop&crop=face", fee: "₹800",  available: true },
 ];
 
 const RESTAURANTS = [
+  { id: 5, name: "Sassy Spoon", cuisine: "Continental", img: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400&h=200&fit=crop", rating: 4.7, wait: 20, seats: 10, queue: 5, priceRange: "₹₹₹", tags: ["European","Bistro"] },
   { id: 1, name: "Babylon",  cuisine: "Continental", img: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=400&h=200&fit=crop", rating: 4.8, wait: 20, seats: 4,  queue: 3, priceRange: "₹₹₹",  tags: ["Fine Dining","Rooftop"] },
   { id: 2, name: "Veranda",  cuisine: "Indian",      img: "https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=400&h=200&fit=crop", rating: 4.7, wait: 10, seats: 8,  queue: 6, priceRange: "₹₹",   tags: ["Family","Buffet"] },
   { id: 3, name: "Ginko",    cuisine: "Japanese",    img: "https://images.unsplash.com/photo-1553621042-f6e147245754?w=400&h=200&fit=crop", rating: 4.9, wait: 35, seats: 2,  queue: 9, priceRange: "₹₹₹₹", tags: ["Sushi","Sake Bar"] },
@@ -1390,9 +1392,9 @@ function DoctorsTab({ initialSearch, onBook, userInfo, refreshToken }) {
     fetchUserAppointments();
   }, [userInfo, refreshToken]);
 
-  const specs = ["All","Cardiologist","Dermatologist","Neurologist","Orthopedic","Pediatrician","General"];
+  const specs = ["All","Cardiologist","Dermatologist","Neurologist","Orthopedic","Pediatrician","General","Physiotherapist"];
   const specLabels = { All:"All", Cardiologist:"Cardiology", Dermatologist:"Dermatology",
-    Neurologist:"Neurology", Orthopedic:"Orthopedic", Pediatrician:"Pediatrics", General:"General" };
+    Neurologist:"Neurology", Orthopedic:"Orthopedic", Pediatrician:"Pediatrics", General:"General", Physiotherapist:"Physiotherapy" };
 
   const filtered = DOCTORS.filter(d => {
     const ms = activeSpec === "All" || d.spec === activeSpec;
