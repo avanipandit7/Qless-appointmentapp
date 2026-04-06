@@ -97,6 +97,14 @@ npm start
 
 The React app will open at `http://localhost:3000`
 
+If you are deploying the frontend separately from the backend, set `REACT_APP_API_URL` to your backend base URL before building. For example:
+
+```bash
+REACT_APP_API_URL=https://your-backend.example.com/api npm run build
+```
+
+This app no longer depends on the CRA `proxy` setting, so the backend URL must be explicit in deployed environments.
+
 ## Key Features
 
 - **API Endpoints**:
