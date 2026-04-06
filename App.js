@@ -69,15 +69,24 @@ async function apiRequest(path, options = {}) {
       }
 
       if (!response.ok) {
+        const fallbackError = text
+          ? text.slice(0, 160).replace(/\s+/g, " ").trim()
+          : null;
+
         lastResponseError = {
           ok: false,
           status: response.status,
           data: payload,
-          error: payload?.error || `Request failed with status ${response.status}`,
+          error: payload?.error || fallbackError || `Request failed with status ${response.status}`,
         };
 
-        // If this base doesn't have the API route, try next configured base.
-        if (response.status === 404 && !isLastBase) {
+        // Retry next base when dev proxy fails or route is unavailable.
+        const canRetryOnThisBase = !isLastBase && (
+          response.status === 404 ||
+          (response.status >= 500 && base === "/api")
+        );
+
+        if (canRetryOnThisBase) {
           continue;
         }
 
@@ -1300,6 +1309,123 @@ function LoginTab({ userInfo, onUserUpdate }) {
   );
 }
 
+function ProfileTab({ userInfo, onUserUpdate, refreshToken }) {
+  const [appointments, setAppointments] = useState([]);
+  const [reservations, setReservations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!userInfo) return;
+
+    const fetchProfileBookings = async () => {
+      setLoading(true);
+      const normalizedUser = sanitizeUserInfo(userInfo);
+
+      try {
+        const [apptRes, resRes] = await Promise.all([
+          apiRequest("/appointments"),
+          apiRequest("/reservations")
+        ]);
+
+        if (apptRes.ok && resRes.ok) {
+          const userAppts = (apptRes.data || []).filter(a =>
+            isSameUser(a, normalizedUser, {
+              name: "patient_name",
+              email: "patient_email",
+              phone: "patient_phone",
+            })
+          );
+
+          const userRess = (resRes.data || []).filter(r =>
+            isSameUser(r, normalizedUser, {
+              name: "customer_name",
+              email: "customer_email",
+              phone: "customer_phone",
+            })
+          );
+
+          setAppointments(userAppts);
+          setReservations(userRess);
+        }
+      } catch (error) {
+        console.error("Error loading profile bookings:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfileBookings();
+  }, [userInfo, refreshToken]);
+
+  if (!userInfo) {
+    return <LoginTab userInfo={userInfo} onUserUpdate={onUserUpdate} />;
+  }
+
+  return (
+    <div style={{ padding: "24px 16px 32px" }}>
+      <div style={{ maxWidth: 920, margin: "0 auto" }}>
+        <div style={{ background: "rgba(13, 20, 40, 0.85)", border: "1px solid #1e3058", borderRadius: 20, padding: 20, marginBottom: 18 }}>
+          <div style={{ fontSize: 12, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 6 }}>Profile</div>
+          <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 6 }}>{userInfo.name}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, color: "#94a3b8", fontSize: 13 }}>
+            <span style={{ background: "#111c35", border: "1px solid #1e3058", borderRadius: 999, padding: "6px 12px" }}>{userInfo.email}</span>
+            <span style={{ background: "#111c35", border: "1px solid #1e3058", borderRadius: 999, padding: "6px 12px" }}>{userInfo.phone}</span>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+          <div style={{ background: "#0d1428", border: "1px solid #1e3058", borderRadius: 18, padding: 18 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Appointments</div>
+            {loading ? (
+              <div style={{ color: "#94a3b8", fontSize: 13 }}>Loading...</div>
+            ) : appointments.length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: 13 }}>No appointments yet.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {appointments.map(appt => (
+                  <div key={`profile-appt-${appt.id}`} style={{ background: "#111c35", border: "1px solid #1e3058", borderRadius: 14, padding: 14 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{appt.doctor_name}</div>
+                    <div style={{ fontSize: 12, color: "#06b6d4", marginBottom: 10 }}>{appt.specialty}</div>
+                    <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                      <div>Date: {appt.appointment_date}</div>
+                      <div>Time: {appt.appointment_time}</div>
+                      <div>Hospital: {appt.hospital}</div>
+                      <div>Fee: {appt.fee}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ background: "#0d1428", border: "1px solid #1e3058", borderRadius: 18, padding: 18 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Reservations</div>
+            {loading ? (
+              <div style={{ color: "#94a3b8", fontSize: 13 }}>Loading...</div>
+            ) : reservations.length === 0 ? (
+              <div style={{ color: "#64748b", fontSize: 13 }}>No reservations yet.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {reservations.map(res => (
+                  <div key={`profile-res-${res.id}`} style={{ background: "#111c35", border: "1px solid #1e3058", borderRadius: 14, padding: 14 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{res.restaurant_name}</div>
+                    <div style={{ fontSize: 12, color: "#10b981", marginBottom: 10 }}>{res.cuisine}</div>
+                    <div style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.6 }}>
+                      <div>Date: {res.reservation_date}</div>
+                      <div>Time: {res.reservation_time}</div>
+                      <div>Party Size: {res.party_size} guests</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── TABS ────────────────────────────────────────────────────────────────────
 
 function HomeTab({ lastBooking, onBook, onShowDoctors }) {
@@ -1676,7 +1802,7 @@ export default function App() {
               <RestaurantsTab onBook={setBookingRest} userInfo={userInfo} refreshToken={bookingsRefreshToken} />
             )}
             {activeTab === "profile" && (
-              <LoginTab userInfo={userInfo} onUserUpdate={handleUserUpdate} />
+              <ProfileTab userInfo={userInfo} onUserUpdate={handleUserUpdate} refreshToken={bookingsRefreshToken} />
             )}
 
             {bookingDoc && (
